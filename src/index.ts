@@ -1,86 +1,46 @@
-import { maxHeaderSize } from 'http';
+import * as path from 'path';
 
 const fs = require('fs-extra');
 
+function findInDir (dir, filter, fileList = []) {
+    const files = fs.readdirSync(dir);
 
-const files = [
-    '/home/akueny/Dev/@genese/genese-duplicates/tests/canAuthentication.guard.ts',
-    '/home/akueny/Dev/@genese/genese-duplicates/tests/noKeycloakCanAuthentication.guard.ts',
-    '/home/akueny/Dev/@genese/genese-duplicates/tests/canAuthentication2.guard.ts',
-];
+    files.forEach((file) => {
+        const filePath = path.join(dir, file);
+        const fileStat = fs.lstatSync(filePath);
+
+        if (fileStat.isDirectory()) {
+            findInDir(filePath, filter, fileList);
+        } else if (filter.test(filePath)) {
+            fileList.push(filePath);
+        }
+    });
+
+    return fileList;
+}
+
+const files = findInDir('/home/akueny/Dev/@genese/genese-duplicates/tests/src', /(?<!\.mock|\.spec)\.ts$/);
 
 const processedFiles = files.map(processFiles);
 
 function ignoreComments(code: string): string {
     return code.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '');
-    // return code;
 }
 
-function processFiles(text: string): { name: string, content: string } {
+function processFiles(text: string): { name: string, lines: string[] } {
     const fileContent = fs.readFileSync(text, 'utf-8');
     return {
         name: text.split('/').reverse()[0],
-        content: ignoreComments(fileContent.toLowerCase()).replace(/\n+/g, '\n')
+        lines: ignoreComments(fileContent.toLowerCase()).replace(/\n+/g, '\n').split('\n')
     };
 }
 
-function areEqual(S1, S2) {
-    if (S1 !== S2) {
-        return false;
-    }
-    for (let i = 0; i < S1.length; i++) {
-        if (S1[i] !== S2[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function polyHash(S, p, x) {
-    var hash = 0;
-    for (let i = 0; i <= S.length - 1; i++) {
-        hash = (hash * x + S.charCodeAt(i)) % p;
-    }
-    return hash;
-}
-
-function rabinKarp(T, P) {
-    var p = 1019;
-    const x = 34;
-    var positions = [];
-    const pHash = polyHash(P, p, x);
-    var text;
-    var tHash;
-
-    // Loop through text
-    for (let k = 0; k <= (T.length - P.length); k++) {
-        text = T.slice(k, (k + P.length));
-
-        tHash = polyHash(text, p, x);
-
-        // If hashes don't match, continue to next loop
-        if (pHash !== tHash) {
-            continue;
-        }
-
-        // If hashes do match, push locations to positions list
-        if (areEqual(text, P)) {
-            positions.push(k);
-        }
-    }
-    return positions;
-}
-
-
 const processedFileNames = [];
 
-processedFiles.forEach(({content, name}, i) => {
-    const lines = content.split('\n');
-    processedFiles.filter((e, index) => index !== i).forEach(({content: otherContent, name: otherName}) => {
+processedFiles.forEach(({lines, name}, i) => {
+    processedFiles.filter((e, index) => index !== i).forEach(({lines: otherLines, name: otherName}) => {
         if (processedFileNames.filter(([a, b]) => a === name && b === otherName || a === otherName && b === name).length > 0) return;
         processedFileNames.push([name, otherName]);
-
-        const otherLines = otherContent.split('\n');
 
         const matrix = Array.from(Array(lines.length + 1), _ => Array(otherLines.length + 1).fill(0));
 
@@ -114,7 +74,11 @@ processedFiles.forEach(({content, name}, i) => {
             i++;
         }
 
-        duplicates = duplicates.filter(({v, text}) => v > 1 && text.replace(/\s/g, '').length > 1);
+        duplicates = duplicates.filter(({v, text}) => {
+            return v >= 2 &&
+                text.replace(/\s/g, '').length >= 10 &&
+                /[\w\d]+/.test(text)
+        });
 
         if (duplicates.length > 0) {
             console.log(`${name} and ${otherName} have duplicated lines`);
@@ -129,3 +93,51 @@ processedFiles.forEach(({content, name}, i) => {
         }
     });
 });
+
+
+// function areEqual(S1, S2) {
+//     if (S1 !== S2) {
+//         return false;
+//     }
+//     for (let i = 0; i < S1.length; i++) {
+//         if (S1[i] !== S2[i]) {
+//             return false;
+//         }
+//     }
+//     return true;
+// }
+//
+// function polyHash(S, p, x) {
+//     var hash = 0;
+//     for (let i = 0; i <= S.length - 1; i++) {
+//         hash = (hash * x + S.charCodeAt(i)) % p;
+//     }
+//     return hash;
+// }
+//
+// function rabinKarp(T, P) {
+//     var p = 1019;
+//     const x = 34;
+//     var positions = [];
+//     const pHash = polyHash(P, p, x);
+//     var text;
+//     var tHash;
+//
+//     // Loop through text
+//     for (let k = 0; k <= (T.length - P.length); k++) {
+//         text = T.slice(k, (k + P.length));
+//
+//         tHash = polyHash(text, p, x);
+//
+//         // If hashes don't match, continue to next loop
+//         if (pHash !== tHash) {
+//             continue;
+//         }
+//
+//         // If hashes do match, push locations to positions list
+//         if (areEqual(text, P)) {
+//             positions.push(k);
+//         }
+//     }
+//     return positions;
+// }
